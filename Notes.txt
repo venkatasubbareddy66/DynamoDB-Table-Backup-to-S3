@@ -1,0 +1,190 @@
+we are creating the dynamoDB table and use dynamoDB streams and taking the backup of these dynamoDB table and stored in the s3 bucket through the lambda function 
+
+-- Working Flow 
+
+Trigger lambda function from the dynamoDB streams and store the backup logs f dynamoDB into AWS s3
+
+
+Step 1 : creating the IAM Role 
+
+-- IAM --> roles --> new Role --> lambda as use-case --> nxt --> create role 
+
+-- now attach policies to the role 
+
+-- policies --> create Policy --> JSON and add permission whatever you need --> create Policy
+
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:Describe*",
+        "dynamodb:Get*",
+        "dynamodb:List*",
+        "dynamodb:Batch*",
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:Get*",
+        "logs:List*",
+        "logs:Describe*",
+        "logs:PutLogEvents",
+        "dynamodb:PutItem",
+        "cloudwatch:Describe*",
+        "cloudwatch:Get*",
+        "cloudwatch:List*",
+        "sns:CreateTopic",
+        "application-autoscaling:Describe*",
+        "s3:PutObject",
+        "s3:List*",
+        "s3:Get*",
+        "dynamodb:Scan",
+        "tag:Describe*",
+        "tag:Get*"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+
+-- Attach this permission to the role that we have created earlier 
+
+
+
+Step 2 : create dynamoDB Table 
+
+-- dynamoDB table --> give partition key as id or anything u want --> create table 
+
+-- create some items into the table 
+
+
+Step 3 : create Bucket 
+
+-- open console and create one bucket to store all the backup files of our dynamoDB table 
+
+-- it is for public access 
+
+-- open bucket --> permission --> edit bucket policy --> add policy 
+
+{
+  "Version": "2012-10-17",
+  "Id": "my-bucket-policy",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "s3:GetObject",
+      "Resource": "<arn>/*"
+    },
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "*"
+      },
+      "Action": "s3:PutObject",
+      "Resource": "<arn>/*"
+    },
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "*"
+      },
+      "Action": "s3:DeleteBucket",
+      "Resource": "<arn>"
+    }
+  ]
+}
+
+
+NOTE : replace the arn with your bucket arn 
+
+
+
+Step 4 : creating the lambda function
+
+-- open console 
+
+-- give name of ur function --> i have use python 3.8 --> use existing role --> create function
+
+-- write code for the function 
+
+import boto3
+import json
+from botocore.exceptions import ClientError
+def lambda_handler(event, context):
+    data = []
+    TableName = "dynamodb-backup"
+    try:
+        s3 = boto3.resource('s3', region_name='ap-south-1')
+        ddbclient = boto3.client('dynamodb', region_name='ap-south-1')
+        response = ddbclient.list_tables()
+        mytables = response['TableNames']
+        
+        if TableName in mytables:
+            allitems = ddbclient.scan(TableName= TableName)
+            for item in allitems['Items']:
+                item_list = {}
+                allKeys = item.keys()
+                for k in allKeys:
+                    value = list(item[k].values())[0]
+                    item_list[k] = str(value)
+                data.append(item_list)
+            data = json.dumps(data)
+            responses3 = s3.Object('dest-bucket111', 'backup_data.json').put(Body=data)
+            print("Completed Upload to S3")
+        print("Lambda run completed")
+        return {
+            'statusCode': 200,
+            'body': json.dumps("success")
+        }
+    except ClientError as e:
+        print("Detailed error: ",e)
+        return {
+            'statusCode': 500,
+            'body': json.dumps("error")
+        }
+    except Exception as e:
+        print("Detailed error: ",e)
+        return {
+            'statusCode': 500,
+            'body': json.dumps("error")
+        }
+
+
+NOTE :     // make sure you that change the bucket name , region , dynamodb TableName name 
+
+
+
+Step 5 : 
+
+
+-- now enable dynamoDB streams in dynamoDB table
+
+-- dynamoDB table --> export and streams --> turn on dynamoDB streams with default sselects 
+
+-- below that add a Trigger for lamda --> select lambda function as Trigger and create Trigger
+
+-- now go to function --> configuration --> general configuration --set timeout to 1 minute 
+
+
+
+Step 6 : TEST 
+
+-- add some more items in the table 
+
+--  go to function --> monitor --> cloud watch logs --> u can able to see the logs of the function 
+
+-- open s3 bucket and do refresh it will store backup of ur dynamoDB data 
+
+-- now try to delete some data from the table 
+
+-- open s3 and do refresh again and download file it will store recent modified data as a backup , through the dynamoDB streamsAPI
+
+-- all the modified data that will store as a backup in the S3 
+
+
+=========================DONE=============================================================================================
+
+
+
+
